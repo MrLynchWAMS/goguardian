@@ -35,6 +35,26 @@
     .tag { display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; color: white; }
     .tag-Academic { background: #dc2626; }
     .tag-DistractionSearch { background: #d97706; }
+    .stats-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+    .frow { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+    .frow label { display: flex; flex-direction: column; font-size: 12px; color: #475569; gap: 3px; }
+    input[type=text], input[type=date], input[type=number], input:not([type]) { padding: 7px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; }
+    button.gray { background: #64748b; }
+    #catChips { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip { font-size: 12px; padding: 4px 8px; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc; cursor: pointer; user-select: none; }
+    .chip i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
+    #resultCount { font-size: 12px; color: #64748b; margin-top: 8px; }
+    .tabs { margin-bottom: 15px; }
+    .tabbtn { background: #e2e8f0; color: #334155; }
+    .tabbtn.on { background: #1e293b; color: white; }
+    .tab { display: none; }
+    .tab.active { display: block; }
+    th.sortable { cursor: pointer; }
+    td.grp { background: #e2e8f0; font-weight: bold; }
+    .note { font-size: 12px; color: #64748b; }
+    .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+    .settings-grid label { font-size: 13px; font-weight: bold; display: block; }
+    .settings-grid textarea { height: 70px; font-weight: normal; }
   </style>
 </head>
 <body>
@@ -63,43 +83,92 @@
     </div>
   </div>
 
-  <div class="card">
-    <label for="studentFilter"><b>Student:</b></label>
-    <select id="studentFilter" onchange="updateUI()"><option value="__all__">All students</option></select>
+  <div class="card" id="filters">
+    <div class="frow">
+      <label>Student <select id="fStudent"></select></label>
+      <label>Site contains <input id="fSite" list="siteList" placeholder="e.g. youtube"></label>
+      <datalist id="siteList"></datalist>
+      <label>Text search <input id="fQ" placeholder="title, URL or search query"></label>
+      <label>From <input type="date" id="fFrom"></label>
+      <label>To <input type="date" id="fTo"></label>
+      <button class="gray" onclick="resetFilters()">Reset filters</button>
+    </div>
+    <div id="catChips"></div>
+    <div id="resultCount"></div>
   </div>
 
-  <div class="stats-grid">
-    <div class="stat-card"><div>Total Pages Logged</div><div class="stat-num" id="statTotal">0</div></div>
-    <div class="stat-card"><div>Academic Answer Searches</div><div class="stat-num" id="statAcademic" style="color: #dc2626;">0</div></div>
-    <div class="stat-card"><div>Distraction Searches</div><div class="stat-num" id="statDistraction" style="color: #d97706;">0</div></div>
-    <div class="stat-card"><div>Off-Task Media / Games</div><div class="stat-num" id="statMedia" style="color: #9333ea;">0</div></div>
-    <div class="stat-card"><div>On-Task School Portals</div><div class="stat-num" id="statSchool" style="color: #16a34a;">0</div></div>
+  <div class="tabs">
+    <button class="tabbtn on" data-tab="overview">Overview</button>
+    <button class="tabbtn" data-tab="sites">Sites</button>
+    <button class="tabbtn" data-tab="searches">Searches</button>
+    <button class="tabbtn" data-tab="log">Full Log</button>
+    <button class="tabbtn" data-tab="settings">Categories &amp; Settings</button>
   </div>
 
-  <div class="charts-grid">
+  <div class="tab active" id="tab-overview">
+    <div class="stats-grid" id="stats"></div>
+    <div class="charts-grid">
+      <div class="card"><h2>Activity Trend by Category</h2><canvas id="barChart"></canvas></div>
+      <div class="card"><h2>Category Share</h2><canvas id="pieChart"></canvas></div>
+    </div>
+    <div class="card"><h2>Top 10 Sites (pages logged)</h2><canvas id="sitesChart"></canvas></div>
+  </div>
+
+  <div class="tab" id="tab-sites">
     <div class="card">
-      <h2>Activity Trend by Category</h2>
-      <canvas id="barChart"></canvas>
+      <h2>Sites Visited</h2>
+      <p class="note">Click a column to sort and a site name to filter to it. Use the dropdown to recategorize a site (applies to all dates); date-specific exceptions are in Categories &amp; Settings. "Est. min" is the time until the next logged page, capped per page (see settings).</p>
+      <label><input type="checkbox" id="groupSites" onchange="update()"> Group by category</label>
+      <button class="success" style="float:right" onclick="exportSites()">Export Sites CSV</button>
+      <table id="sitesTable"><thead><tr>
+        <th class="sortable" data-sort="dom">Site</th><th class="sortable" data-sort="pages">Pages</th>
+        <th class="sortable" data-sort="mins">Est. min</th><th class="sortable" data-sort="stu">Students</th>
+        <th class="sortable" data-sort="days">Days</th><th class="sortable" data-sort="last">Last seen</th>
+        <th class="sortable" data-sort="cat">Category</th><th>Recategorize</th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+  </div>
+
+  <div class="tab" id="tab-searches">
+    <div class="card">
+      <h2>Google Searches</h2>
+      <table id="searchTable"><thead><tr><th>Student</th><th>Timestamp</th><th>Search Query / Question</th><th>Category</th></tr></thead><tbody></tbody></table>
+    </div>
+  </div>
+
+  <div class="tab" id="tab-log">
+    <div class="card">
+      <h2>Full Log</h2>
+      <p class="note" id="logNote"></p>
+      <table id="logTable"><thead><tr><th>Student</th><th>Timestamp</th><th>Category</th><th>Page Title</th><th>Site / URL</th></tr></thead><tbody></tbody></table>
+    </div>
+  </div>
+
+  <div class="tab" id="tab-settings">
+    <div class="card">
+      <h2>Rule Exceptions</h2>
+      <p class="note">A rule recategorizes any entry whose URL, title or search text contains the match text, optionally only within a date range (e.g. YouTube approved on the day of a lesson). Later rules override earlier ones. Everything re-categorizes instantly; stored data is not changed.</p>
+      <div class="frow">
+        <label>Match text <input id="rMatch" placeholder="youtube.com or a video title"></label>
+        <label>Category <select id="rCat"></select></label>
+        <label>From (optional) <input type="date" id="rFrom"></label>
+        <label>To (optional) <input type="date" id="rTo"></label>
+        <button onclick="addRule()">Add Rule</button>
+      </div>
+      <table id="rulesTable"><thead><tr><th>Match</th><th>Category</th><th>From</th><th>To</th><th></th></tr></thead><tbody></tbody></table>
     </div>
     <div class="card">
-      <h2>Search Query Intent</h2>
-      <canvas id="pieChart"></canvas>
+      <h2>Default Detection Terms</h2>
+      <p class="note">Comma-separated, case-insensitive, matched anywhere in the URL/title. Searches containing an Academic term (or no term at all) are "Academic Search"; Distraction terms make them "Distraction Search".</p>
+      <div class="settings-grid">
+        <label>Academic search terms <textarea id="sAcademic"></textarea></label>
+        <label>Distraction search terms <textarea id="sDistraction"></textarea></label>
+        <label>Media / Games sites <textarea id="sMedia"></textarea></label>
+        <label>School portal sites <textarea id="sSchool"></textarea></label>
+        <label>Max minutes credited per page (time estimate) <input type="number" id="sCap" min="1" max="60"></label>
+      </div>
+      <div style="margin-top:12px"><button onclick="saveTerms()">Save Settings</button><button class="gray" onclick="resetTerms()">Restore Defaults</button></div>
     </div>
-  </div>
-
-  <div class="card">
-    <h2>Flagged Google Searches (Direct Question Copy-Paste)</h2>
-    <table id="searchTable">
-      <thead>
-        <tr>
-          <th>Student</th>
-          <th>Timestamp</th>
-          <th>Extracted Google Search Query / Question</th>
-          <th>Classification</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
   </div>
 </div>
 
@@ -110,11 +179,27 @@ try { globalData = JSON.parse(localStorage.getItem(STORE_KEY) || '[]'); } catch 
 let barChartInst = null;
 let pieChartInst = null;
 
-/* ---------- Editable classification rules ---------- */
-const ACADEMIC_RE = /co2|fuel|helicopter|aw139|lebron|emissions|equivalency|kilograms|metric tons|how many|calculate/i;
-const DISTRACTION_RE = /game|clicker|cookie|play/i;
-const MEDIA_RE = /youtube\.com|msn\.com|cookieclicker|clickcounter/i;
-const SCHOOL_RE = /scienceclass\.rocks|classroom\.google\.com|dynalist\.io|goformative\.com|edpuzzle\.com/i;
+/* ---------- Settings & rules (editable in the Settings tab) ---------- */
+const SET_KEY = 'goguardian_settings_v2';
+const DEFAULTS = {
+  academic: 'co2, fuel, helicopter, aw139, lebron, emissions, equivalency, kilograms, metric tons, how many, calculate',
+  distraction: 'game, clicker, cookie, play',
+  media: 'youtube.com, msn.com, cookieclicker, clickcounter',
+  school: 'scienceclass.rocks, classroom.google.com, dynalist.io, goformative.com, edpuzzle.com',
+  cap: 5, rules: []
+};
+let settings = JSON.parse(JSON.stringify(DEFAULTS));
+try { Object.assign(settings, JSON.parse(localStorage.getItem(SET_KEY) || '{}')); } catch (e) {}
+let C = {};
+function compile() {
+  const t = x => (x || '').split(',').map(v => v.trim().toLowerCase()).filter(Boolean);
+  C = { academic: t(settings.academic), distraction: t(settings.distraction), media: t(settings.media), school: t(settings.school) };
+}
+compile();
+function saveSettings() { try { localStorage.setItem(SET_KEY, JSON.stringify(settings)); } catch (e) {} compile(); }
+const has = (text, list) => list.some(t => text.includes(t));
+const CATS = ['Academic Search', 'Distraction Search', 'Media / Games', 'School Portal', 'Approved', 'Other'];
+const COLORS = { 'Academic Search': '#dc2626', 'Distraction Search': '#d97706', 'Media / Games': '#9333ea', 'School Portal': '#16a34a', 'Approved': '#0891b2', 'Other': '#64748b' };
 
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -139,15 +224,15 @@ function extractSearchQuery(title, url) {
 
 function classify(title, url, searchQuery) {
   const isSearch = !!searchQuery || /google\.com\/search/i.test(url || "");
-  const hay = (title || "") + " " + (url || "");
+  const hay = ((title || "") + " " + (url || "")).toLowerCase();
   if (isSearch) {
-    const sq = (searchQuery || title || "").toLowerCase();
-    if (ACADEMIC_RE.test(sq)) return "Academic Search";
-    if (DISTRACTION_RE.test(sq)) return "Distraction Search";
+    const q = (searchQuery || title || "").toLowerCase();
+    if (has(q, C.academic)) return "Academic Search";
+    if (has(q, C.distraction)) return "Distraction Search";
     return "Academic Search";
   }
-  if (MEDIA_RE.test(hay)) return "Media / Games";
-  if (SCHOOL_RE.test(hay)) return "School Portal";
+  if (has(hay, C.media)) return "Media / Games";
+  if (has(hay, C.school)) return "School Portal";
   return "Other";
 }
 
@@ -378,101 +463,261 @@ function clearData() {
   }
 }
 
-/* ---------- UI ---------- */
-function currentData() {
-  const sel = document.getElementById('studentFilter').value;
-  return sel === '__all__' ? globalData : globalData.filter(d => (d.student || '(unknown)') === sel);
+/* ---------- Derived rows, filters ---------- */
+const el = id => document.getElementById(id);
+const F = { student: '__all__', cats: new Set(CATS), site: '', q: '', from: '', to: '' };
+let TAB = 'overview', sortKey = 'pages', sortDir = -1, ALL = [], sig = '', charts = {};
+
+function domainOf(u) {
+  if (!u) return '(no url)';
+  try { return new URL(u).hostname.replace(/^www\./, '') || '(no url)'; }
+  catch (e) { const m = u.match(/^(?:https?:\/\/)?([^\/?#]+)/i); return m ? m[1].replace(/^www\./, '') : '(no url)'; }
+}
+function tsDate(ts) {
+  const m = (ts || '').match(/(\d+)\/(\d+)\/(\d+) (\d+):(\d+) ([AP])M/);
+  if (!m) return null;
+  let h = (+m[4]) % 12; if (m[6] === 'P') h += 12;
+  return new Date(+m[3], +m[1] - 1, +m[2], h, +m[5]);
+}
+function isoDay(ts) { const m = (ts || '').match(/(\d{2})\/(\d{2})\/(\d{4})/); return m ? `${m[3]}-${m[1]}-${m[2]}` : ''; }
+
+function effCat(d) {
+  let c = classify(d.title, d.url, d.searchQuery);
+  const day = isoDay(d.timestamp);
+  const hay = ((d.url || '') + ' ' + (d.title || '') + ' ' + (d.searchQuery || '')).toLowerCase();
+  for (const r of settings.rules) {
+    if (r.from && day < r.from) continue;
+    if (r.to && day > r.to) continue;
+    if (hay.includes(r.match.toLowerCase())) c = r.cat;
+  }
+  return c;
 }
 
-function refreshStudentFilter() {
-  const sel = document.getElementById('studentFilter');
-  const prev = sel.value;
-  const names = [...new Set(globalData.map(d => d.student || '(unknown)'))].sort();
-  sel.innerHTML = '<option value="__all__">All students</option>' +
-    names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
-  sel.value = names.includes(prev) || prev === '__all__' ? prev : '__all__';
+function derive() {
+  const rows = globalData.map(d => ({ d, cat: effCat(d), dom: domainOf(d.url), day: isoDay(d.timestamp), t: tsDate(d.timestamp), mins: 0, stu: d.student || '(unknown)' }));
+  const by = {};
+  rows.forEach(r => (by[r.stu] = by[r.stu] || []).push(r));
+  for (const k in by) {
+    const a = by[k].filter(r => r.t).sort((x, y) => x.t - y.t);
+    for (let i = 0; i < a.length - 1; i++) a[i].mins = Math.min((a[i + 1].t - a[i].t) / 60000, settings.cap);
+  }
+  return rows;
 }
 
-function updateUI() {
-  refreshStudentFilter();
-  const data = currentData();
-  const count = c => data.filter(d => d.category === c).length;
-  document.getElementById('statTotal').innerText = data.length;
-  document.getElementById('statAcademic').innerText = count('Academic Search');
-  document.getElementById('statDistraction').innerText = count('Distraction Search');
-  document.getElementById('statMedia').innerText = count('Media / Games');
-  document.getElementById('statSchool').innerText = count('School Portal');
-
-  const tbody = document.querySelector('#searchTable tbody');
-  tbody.innerHTML = "";
-  data.filter(d => d.searchQuery || d.category === 'Academic Search' || d.category === 'Distraction Search')
-    .forEach(s => {
-      const tagClass = s.category === 'Academic Search' ? 'tag-Academic' : 'tag-DistractionSearch';
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${esc(s.student || '')}</td>
-        <td>${esc(s.timestamp)}</td>
-        <td style="font-weight: 500;">${esc(s.searchQuery || s.title)}</td>
-        <td><span class="tag ${tagClass}">${esc(s.category)}</span></td>`;
-      tbody.appendChild(tr);
-    });
-
-  renderCharts(data);
+function applyFilters(all) {
+  const q = F.q.toLowerCase(), st = F.site.toLowerCase();
+  return all.filter(r =>
+    (F.student === '__all__' || r.stu === F.student) && F.cats.has(r.cat) &&
+    (!F.from || r.day >= F.from) && (!F.to || r.day <= F.to) &&
+    (!st || r.dom.toLowerCase().includes(st)) &&
+    (!q || ((r.d.title || '') + ' ' + (r.d.url || '') + ' ' + (r.d.searchQuery || '')).toLowerCase().includes(q)));
 }
 
-function dateKey(d) {
-  const m = d.match(/(\d{2})\/(\d{2})\/(\d{4})/);
-  return m ? `${m[3]}-${m[1]}-${m[2]}` : d;
+const badge = c => `<span class="tag" style="background:${COLORS[c] || '#64748b'}">${esc(c)}</span>`;
+const fmtT = t => t ? t.toLocaleDateString() + ' ' + t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+const byTimeDesc = (a, b) => (b.t || 0) - (a.t || 0);
+
+function fillOptions() {
+  const stu = [...new Set(ALL.map(r => r.stu))].sort();
+  const sel = el('fStudent'), prev = F.student;
+  sel.innerHTML = '<option value="__all__">All students</option>' + stu.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+  sel.value = stu.includes(prev) ? prev : '__all__';
+  F.student = sel.value;
+  const cnt = {};
+  ALL.forEach(r => cnt[r.dom] = (cnt[r.dom] || 0) + 1);
+  el('siteList').innerHTML = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a]).slice(0, 300).map(d => `<option value="${esc(d)}">`).join('');
 }
 
-function renderCharts(data) {
-  const dates = [...new Set(data.map(d => d.date))].sort((a, b) => dateKey(a).localeCompare(dateKey(b)));
-  const categories = ['Academic Search', 'Distraction Search', 'Media / Games', 'School Portal', 'Other'];
-  const colorMap = {
-    'Academic Search': '#dc2626', 'Distraction Search': '#d97706', 'Media / Games': '#9333ea',
-    'School Portal': '#16a34a', 'Other': '#64748b'
-  };
-  const datasets = categories.map(cat => ({
-    label: cat,
-    data: dates.map(d => data.filter(item => item.date === d && item.category === cat).length),
-    backgroundColor: colorMap[cat]
-  }));
+function update() {
+  ALL = derive();
+  const g = globalData.length + '|';
+  if (g !== sig) { sig = g; fillOptions(); }
+  const rows = applyFilters(ALL);
+  el('resultCount').textContent = `${rows.length} of ${ALL.length} entries match the current filters`;
+  ({ overview: renderOverview, sites: renderSites, searches: renderSearches, log: renderLog, settings: renderRules })[TAB](rows);
+}
+function updateUI() { update(); }
 
-  if (barChartInst) barChartInst.destroy();
-  barChartInst = new Chart(document.getElementById('barChart').getContext('2d'), {
-    type: 'bar',
-    data: { labels: dates, datasets: datasets },
-    options: { responsive: true, scales: { x: { stacked: true }, y: { stacked: true } } }
+function showTab(t) {
+  TAB = t;
+  document.querySelectorAll('.tab').forEach(e => e.classList.toggle('active', e.id === 'tab-' + t));
+  document.querySelectorAll('.tabbtn').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+  update();
+}
+
+function readFilters() {
+  F.student = el('fStudent').value; F.site = el('fSite').value.trim(); F.q = el('fQ').value.trim();
+  F.from = el('fFrom').value; F.to = el('fTo').value;
+  update();
+}
+function resetFilters() {
+  ['fSite', 'fQ', 'fFrom', 'fTo'].forEach(i => el(i).value = '');
+  el('fStudent').value = '__all__';
+  F.cats = new Set(CATS);
+  document.querySelectorAll('#catChips input').forEach(i => i.checked = true);
+  readFilters();
+}
+
+/* ---------- Renderers ---------- */
+function mkChart(id, cfg) {
+  if (charts[id]) charts[id].destroy();
+  charts[id] = new Chart(el(id).getContext('2d'), cfg);
+}
+
+function renderOverview(rows) {
+  const card = (l, v, c) => `<div class="stat-card"><div>${esc(l)}</div><div class="stat-num" style="color:${c}">${v}</div></div>`;
+  const mins = rows.reduce((a, r) => a + r.mins, 0);
+  let h = card('Pages Logged', rows.length, '#1e293b') + card('Est. Active Time', (mins / 60).toFixed(1) + ' h', '#1e293b');
+  CATS.forEach(c => h += card(c, rows.filter(r => r.cat === c).length, COLORS[c]));
+  el('stats').innerHTML = h;
+
+  const days = [...new Set(rows.map(r => r.day))].sort();
+  mkChart('barChart', { type: 'bar',
+    data: { labels: days, datasets: CATS.map(c => ({ label: c, backgroundColor: COLORS[c], data: days.map(d => rows.filter(r => r.day === d && r.cat === c).length) })) },
+    options: { responsive: true, scales: { x: { stacked: true }, y: { stacked: true } } } });
+  mkChart('pieChart', { type: 'pie',
+    data: { labels: CATS, datasets: [{ data: CATS.map(c => rows.filter(r => r.cat === c).length), backgroundColor: CATS.map(c => COLORS[c]) }] },
+    options: { responsive: true } });
+  const top = siteAgg(rows).sort((a, b) => b.pages - a.pages).slice(0, 10);
+  mkChart('sitesChart', { type: 'bar',
+    data: { labels: top.map(s => s.dom), datasets: [{ label: 'Pages', data: top.map(s => s.pages), backgroundColor: top.map(s => COLORS[s.cat]) }] },
+    options: { indexAxis: 'y', responsive: true, plugins: { legend: { display: false } } } });
+}
+
+function siteAgg(rows) {
+  const m = {};
+  rows.forEach(r => {
+    const s = m[r.dom] = m[r.dom] || { dom: r.dom, pages: 0, mins: 0, stu: new Set(), days: new Set(), last: null, cats: {} };
+    s.pages++; s.mins += r.mins; s.stu.add(r.stu); s.days.add(r.day);
+    if (r.t && (!s.last || r.t > s.last)) s.last = r.t;
+    s.cats[r.cat] = (s.cats[r.cat] || 0) + 1;
   });
-
-  if (pieChartInst) pieChartInst.destroy();
-  pieChartInst = new Chart(document.getElementById('pieChart').getContext('2d'), {
-    type: 'pie',
-    data: {
-      labels: ['Academic Questions', 'Games/Distractions'],
-      datasets: [{
-        data: [data.filter(d => d.category === 'Academic Search').length,
-               data.filter(d => d.category === 'Distraction Search').length],
-        backgroundColor: ['#dc2626', '#d97706']
-      }]
-    },
-    options: { responsive: true }
+  return Object.values(m).map(s => {
+    const ks = Object.keys(s.cats).sort((a, b) => s.cats[b] - s.cats[a]);
+    s.cat = ks[0]; s.mixed = ks.length > 1; return s;
   });
 }
 
-function exportCSV() {
-  const data = currentData();
-  if (!data.length) return alert("No data to export.");
-  const q = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
-  const rows = data.map(d => [d.student, d.timestamp, d.date, d.category, d.searchQuery, d.title, d.url].map(q).join(','));
-  const csv = ["Student,Timestamp,Date,Category,Search Query,Page Title,URL", ...rows].join('\n');
+function renderSites(rows) {
+  const list = siteAgg(rows);
+  const val = { dom: s => s.dom, pages: s => s.pages, mins: s => s.mins, stu: s => s.stu.size, days: s => s.days.size, last: s => s.last ? +s.last : 0, cat: s => s.cat }[sortKey];
+  const grp = el('groupSites').checked;
+  list.sort((a, b) => {
+    if (grp) { const g = CATS.indexOf(a.cat) - CATS.indexOf(b.cat); if (g) return g; }
+    const x = val(a), y = val(b);
+    return ((x < y ? -1 : x > y ? 1 : 0) * sortDir) || (b.pages - a.pages);
+  });
+  let html = '', lastCat = null;
+  list.slice(0, 500).forEach(s => {
+    if (grp && s.cat !== lastCat) {
+      lastCat = s.cat;
+      const n = list.filter(x => x.cat === s.cat).length;
+      html += `<tr><td class="grp" colspan="8">${esc(s.cat)} (${n} site${n === 1 ? '' : 's'})</td></tr>`;
+    }
+    const rule = settings.rules.find(r => r.match === s.dom && !r.from && !r.to);
+    html += `<tr><td><a href="#" class="siteLink" data-dom="${esc(s.dom)}">${esc(s.dom)}</a></td><td>${s.pages}</td><td>${Math.round(s.mins)}</td><td>${s.stu.size}</td><td>${s.days.size}</td><td>${esc(fmtT(s.last))}</td><td>${badge(s.cat)}${s.mixed ? ' <small>(mixed)</small>' : ''}</td>` +
+      `<td><select class="siteCat" data-dom="${esc(s.dom)}"><option value="">Auto</option>${CATS.map(c => `<option${rule && rule.cat === c ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select></td></tr>`;
+  });
+  document.querySelector('#sitesTable tbody').innerHTML = html || '<tr><td colspan="8">No data</td></tr>';
+}
+
+function setSiteRule(dom, cat) {
+  settings.rules = settings.rules.filter(r => !(r.match === dom && !r.from && !r.to));
+  if (cat) settings.rules.push({ match: dom, cat });
+  saveSettings(); update();
+}
+
+function renderSearches(rows) {
+  const list = rows.filter(r => r.d.searchQuery || /google\.com\/search/i.test(r.d.url || '')).sort(byTimeDesc);
+  document.querySelector('#searchTable tbody').innerHTML = list.slice(0, 1000).map(r =>
+    `<tr><td>${esc(r.stu)}</td><td>${esc(r.d.timestamp)}</td><td style="font-weight:500">${esc(r.d.searchQuery || r.d.title)}</td><td>${badge(r.cat)}</td></tr>`).join('') || '<tr><td colspan="4">No searches match</td></tr>';
+}
+
+function renderLog(rows) {
+  const list = rows.slice().sort(byTimeDesc);
+  el('logNote').textContent = list.length > 500 ? `Showing newest 500 of ${list.length}. Narrow the filters or export CSV for everything.` : '';
+  document.querySelector('#logTable tbody').innerHTML = list.slice(0, 500).map(r => {
+    const u = r.d.url || '';
+    const link = /^https?:\/\//i.test(u) ? `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(r.dom)}</a>` : esc(r.dom);
+    return `<tr><td>${esc(r.stu)}</td><td>${esc(r.d.timestamp)}</td><td>${badge(r.cat)}</td><td>${esc(r.d.title)}</td><td title="${esc(u)}">${link}</td></tr>`;
+  }).join('') || '<tr><td colspan="5">No entries match</td></tr>';
+}
+
+function renderRules() {
+  document.querySelector('#rulesTable tbody').innerHTML = settings.rules.map((r, i) =>
+    `<tr><td>${esc(r.match)}</td><td>${badge(r.cat)}</td><td>${esc(r.from || '')}</td><td>${esc(r.to || '')}</td><td><button class="danger delRule" data-i="${i}">Delete</button></td></tr>`).join('') || '<tr><td colspan="5">No rules yet</td></tr>';
+}
+function addRule() {
+  const match = el('rMatch').value.trim();
+  if (!match) return alert('Enter text to match.');
+  const r = { match, cat: el('rCat').value };
+  if (el('rFrom').value) r.from = el('rFrom').value;
+  if (el('rTo').value) r.to = el('rTo').value;
+  settings.rules.push(r);
+  saveSettings(); el('rMatch').value = ''; update();
+}
+function fillSettings() {
+  el('sAcademic').value = settings.academic; el('sDistraction').value = settings.distraction;
+  el('sMedia').value = settings.media; el('sSchool').value = settings.school; el('sCap').value = settings.cap;
+}
+function saveTerms() {
+  settings.academic = el('sAcademic').value; settings.distraction = el('sDistraction').value;
+  settings.media = el('sMedia').value; settings.school = el('sSchool').value;
+  settings.cap = Math.max(1, +el('sCap').value || 5);
+  saveSettings(); update();
+}
+function resetTerms() {
+  if (!confirm('Restore default terms and time cap? Your rule exceptions are kept.')) return;
+  ['academic', 'distraction', 'media', 'school', 'cap'].forEach(k => settings[k] = DEFAULTS[k]);
+  saveSettings(); fillSettings(); update();
+}
+
+/* ---------- Export ---------- */
+const q = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+function dl(name, text) {
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-  a.download = `goguardian_accumulated_report_${new Date().toISOString().slice(0, 10)}.csv`;
-  a.click();
+  a.href = URL.createObjectURL(new Blob([text], { type: 'text/csv' }));
+  a.download = name; a.click();
+}
+const stamp = () => new Date().toISOString().slice(0, 10);
+function exportCSV() {
+  const rows = applyFilters(derive()).sort(byTimeDesc);
+  if (!rows.length) return alert('No data to export.');
+  dl(`goguardian_log_${stamp()}.csv`, ['Student,Timestamp,Date,Category,Site,Search Query,Page Title,URL,Est Minutes',
+    ...rows.map(r => [r.stu, r.d.timestamp, r.d.date, r.cat, r.dom, r.d.searchQuery, r.d.title, r.d.url, r.mins.toFixed(1)].map(q).join(','))].join('\n'));
+}
+function exportSites() {
+  const list = siteAgg(applyFilters(derive())).sort((a, b) => b.pages - a.pages);
+  if (!list.length) return alert('No data to export.');
+  dl(`goguardian_sites_${stamp()}.csv`, ['Site,Pages,Est Minutes,Students,Days,Category',
+    ...list.map(s => [s.dom, s.pages, Math.round(s.mins), s.stu.size, s.days.size, s.cat].map(q).join(','))].join('\n'));
 }
 
-window.onload = updateUI;
+/* ---------- Init ---------- */
+function init() {
+  el('catChips').innerHTML = CATS.map(c => `<label class="chip"><input type="checkbox" value="${esc(c)}" checked> <i style="background:${COLORS[c]}"></i>${esc(c)}</label>`).join('');
+  el('rCat').innerHTML = CATS.map(c => `<option>${esc(c)}</option>`).join('');
+  el('catChips').addEventListener('change', e => {
+    e.target.checked ? F.cats.add(e.target.value) : F.cats.delete(e.target.value);
+    update();
+  });
+  ['fStudent', 'fSite', 'fQ', 'fFrom', 'fTo'].forEach(i => el(i).addEventListener('input', readFilters));
+  document.querySelector('.tabs').addEventListener('click', e => { if (e.target.dataset.tab) showTab(e.target.dataset.tab); });
+  document.querySelector('#sitesTable thead').addEventListener('click', e => {
+    const k = e.target.dataset.sort; if (!k) return;
+    sortDir = sortKey === k ? -sortDir : (k === 'dom' || k === 'cat' ? 1 : -1); sortKey = k; update();
+  });
+  el('sitesTable').addEventListener('click', e => {
+    if (e.target.classList.contains('siteLink')) { e.preventDefault(); el('fSite').value = e.target.dataset.dom; readFilters(); showTab('log'); }
+  });
+  el('sitesTable').addEventListener('change', e => { if (e.target.classList.contains('siteCat')) setSiteRule(e.target.dataset.dom, e.target.value); });
+  el('rulesTable').addEventListener('click', e => {
+    if (e.target.classList.contains('delRule')) { settings.rules.splice(+e.target.dataset.i, 1); saveSettings(); update(); }
+  });
+  fillSettings();
+  update();
+}
+window.onload = init;
 </script>
 </body>
 </html>
