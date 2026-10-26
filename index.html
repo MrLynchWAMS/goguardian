@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>GoGuardian Student Activity Accumulator</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 20px; background: #f4f6f8; color: #333; }
+    h1, h2 { color: #1a252f; }
+    .container { max-width: 1200px; margin: 0 auto; }
+    .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); margin-bottom: 20px; }
+    textarea { width: 100%; height: 100px; border: 1px solid #ccc; border-radius: 4px; padding: 10px; font-family: monospace; box-sizing: border-box; }
+    button { background: #2563eb; color: white; border: none; padding: 10px 18px; border-radius: 4px; cursor: pointer; font-weight: bold; margin-right: 10px; }
+    button:hover { background: #1d4ed8; }
+    button.danger { background: #dc2626; }
+    button.danger:hover { background: #b91c1c; }
+    button.success { background: #059669; }
+    button.success:hover { background: #047857; }
+    #dropZone { border: 2px dashed #94a3b8; border-radius: 8px; padding: 28px; text-align: center; color: #475569; cursor: pointer; background: #f8fafc; }
+    #dropZone.over { border-color: #2563eb; background: #eff6ff; }
+    #progressWrap { display: none; margin-top: 12px; }
+    #progressBar { height: 10px; background: #2563eb; width: 0%; border-radius: 5px; transition: width .1s; }
+    #progressTrack { background: #e2e8f0; border-radius: 5px; }
+    #statusMsg { font-size: 13px; color: #475569; margin-top: 6px; }
+    .stats-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 15px; margin-bottom: 20px; }
+    .stat-card { background: #f8fafc; border: 1px solid #e2e8f0; padding: 15px; border-radius: 6px; text-align: center; }
+    .stat-num { font-size: 24px; font-weight: bold; color: #1e293b; margin-top: 5px; }
+    .charts-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+    th, td { border: 1px solid #e2e8f0; padding: 10px; text-align: left; font-size: 13px; }
+    th { background: #f1f5f9; }
+    tr:nth-child(even) { background: #f8fafc; }
+    select { padding: 8px; border-radius: 4px; border: 1px solid #ccc; font-size: 14px; }
+    .tag { display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; color: white; }
+    .tag-Academic { background: #dc2626; }
+    .tag-DistractionSearch { background: #d97706; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h1>GoGuardian Student Search & Activity Accumulator</h1>
+
+  <div class="card">
+    <h2>Load GoGuardian PDF Report</h2>
+    <p style="font-size: 13px; color: #64748b;">Drop the report PDF here (or click to choose). It is read locally in your browser; nothing is uploaded. Only the Date &amp; Time / Page Title / URL log rows are kept. Re-loading the same PDF will not create duplicates.</p>
+    <div id="dropZone">Drop PDF here or click to browse</div>
+    <input type="file" id="pdfInput" accept="application/pdf" multiple style="display:none">
+    <div id="progressWrap">
+      <div id="progressTrack"><div id="progressBar"></div></div>
+      <div id="statusMsg"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Or Paste Text (legacy)</h2>
+    <textarea id="dataInput" placeholder="Paste GoGuardian text here..."></textarea>
+    <div style="margin-top: 10px;">
+      <button onclick="processInput()">Parse & Accumulate Pasted Text</button>
+      <button class="success" onclick="exportCSV()">Export CSV (current filter)</button>
+      <button class="danger" onclick="clearData()">Clear Stored Data</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <label for="studentFilter"><b>Student:</b></label>
+    <select id="studentFilter" onchange="updateUI()"><option value="__all__">All students</option></select>
+  </div>
+
+  <div class="stats-grid">
+    <div class="stat-card"><div>Total Pages Logged</div><div class="stat-num" id="statTotal">0</div></div>
+    <div class="stat-card"><div>Academic Answer Searches</div><div class="stat-num" id="statAcademic" style="color: #dc2626;">0</div></div>
+    <div class="stat-card"><div>Distraction Searches</div><div class="stat-num" id="statDistraction" style="color: #d97706;">0</div></div>
+    <div class="stat-card"><div>Off-Task Media / Games</div><div class="stat-num" id="statMedia" style="color: #9333ea;">0</div></div>
+    <div class="stat-card"><div>On-Task School Portals</div><div class="stat-num" id="statSchool" style="color: #16a34a;">0</div></div>
+  </div>
+
+  <div class="charts-grid">
+    <div class="card">
+      <h2>Activity Trend by Category</h2>
+      <canvas id="barChart"></canvas>
+    </div>
+    <div class="card">
+      <h2>Search Query Intent</h2>
+      <canvas id="pieChart"></canvas>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Flagged Google Searches (Direct Question Copy-Paste)</h2>
+    <table id="searchTable">
+      <thead>
+        <tr>
+          <th>Student</th>
+          <th>Timestamp</th>
+          <th>Extracted Google Search Query / Question</th>
+          <th>Classification</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+const STORE_KEY = 'goguardian_accumulated_data';
+let globalData = [];
+try { globalData = JSON.parse(localStorage.getItem(STORE_KEY) || '[]'); } catch (e) { globalData = []; }
+let barChartInst = null;
+let pieChartInst = null;
+
+/* ---------- Editable classification rules ---------- */
+const ACADEMIC_RE = /co2|fuel|helicopter|aw139|lebron|emissions|equivalency|kilograms|metric tons|how many|calculate/i;
+const DISTRACTION_RE = /game|clicker|cookie|play/i;
+const MEDIA_RE = /youtube\.com|msn\.com|cookieclicker|clickcounter/i;
+const SCHOOL_RE = /scienceclass\.rocks|classroom\.google\.com|dynalist\.io|goformative\.com|edpuzzle\.com/i;
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function save() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(globalData)); }
+  catch (e) { alert("Could not save to browser storage (it may be full). Export your CSV before adding more data."); }
+}
+
+/* ---------- Classification ---------- */
+function extractSearchQuery(title, url) {
+  let q = "";
+  let m = (url || "").match(/[?&]q=([^&]+)/);
+  if (m) {
+    try { q = decodeURIComponent(m[1].replace(/\+/g, ' ')); } catch (e) { q = m[1]; }
+  } else if (/ - Google Search\s*$/i.test(title || "")) {
+    q = title.replace(/ - Google Search\s*$/i, '');
+  }
+  return q.trim();
+}
+
+function classify(title, url, searchQuery) {
+  const isSearch = !!searchQuery || /google\.com\/search/i.test(url || "");
+  const hay = (title || "") + " " + (url || "");
+  if (isSearch) {
+    const sq = (searchQuery || title || "").toLowerCase();
+    if (ACADEMIC_RE.test(sq)) return "Academic Search";
+    if (DISTRACTION_RE.test(sq)) return "Distraction Search";
+    return "Academic Search";
+  }
+  if (MEDIA_RE.test(hay)) return "Media / Games";
+  if (SCHOOL_RE.test(hay)) return "School Portal";
+  return "Other";
+}
+
+function makeEntry(student, timestamp, title, url) {
+  title = (title || "").replace(/\s+/g, ' ').trim();
+  url = (url || "").replace(/\s+/g, '');
+  const searchQuery = extractSearchQuery(title, url);
+  return {
+    student: student || "",
+    timestamp: timestamp,
+    date: timestamp.split(' ')[0] || "Unknown",
+    title: title,
+    url: url,
+    searchQuery: searchQuery,
+    category: classify(title, url, searchQuery)
+  };
+}
+
+function dedupeKey(d) { return [d.student || '', d.timestamp, d.url, d.title].join('|'); }
+
+function addEntries(entries) {
+  const seen = new Set(globalData.map(dedupeKey));
+  let added = 0;
+  for (const e of entries) {
+    const k = dedupeKey(e);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    globalData.push(e);
+    added++;
+  }
+  save();
+  return added;
+}
+
+/* ---------- PDF parsing (position-based) ---------- */
+const TS_RE = /(\d{1,2})\s*\/\s*(\d{1,2})\s*\/\s*(\d{4})\s*(\d{1,2}\s*:\s*\d{2})\s*([AP])\s*M/i;
+const FOOTER_RE = /^(page\s*)?\d+\s*(of|\/)\s*\d+$/i;
+
+function formatTs(m) {
+  const pad = n => n.padStart(2, '0');
+  const time = m[4].replace(/\s+/g, '');
+  const [h, min] = time.split(':');
+  return `${pad(m[1])}/${pad(m[2])}/${m[3]} ${pad(h)}:${min} ${m[5].toUpperCase()}M`;
+}
+
+function groupLines(items, tol = 3) {
+  const sorted = items.slice().sort((a, b) => b.ly - a.ly || a.x - b.x);
+  const lines = [];
+  for (const it of sorted) {
+    const last = lines[lines.length - 1];
+    if (last && Math.abs(last.ly - it.ly) <= tol) last.items.push(it);
+    else lines.push({ ly: it.ly, items: [it] });
+  }
+  return lines;
+}
+
+function joinLine(items) {
+  const s = items.slice().sort((a, b) => a.x - b.x);
+  let out = "", prevEnd = null;
+  for (const it of s) {
+    if (prevEnd !== null && it.x - prevEnd > 1.5 && !/\s$/.test(out) && !/^\s/.test(it.s)) out += " ";
+    out += it.s;
+    prevEnd = it.x + it.w;
+  }
+  return out.trim();
+}
+
+function processPage(items, pageNum, pageWidth, state) {
+  const topLine = groupLines(items)[0];
+  const allText = items.map(i => i.s).join(' ');
+
+  // New student block
+  if (/Top 5 Sites/i.test(allText)) {
+    let name = topLine ? joinLine(topLine.items) : "";
+    name = name.split('|')[0].replace(/Top 5 Sites.*/i, '').trim();
+    state.studentCount++;
+    state.student = name || `Student ${state.studentCount}`;
+    state.table = false;
+    state.cols = null;
+    state.last = null;
+  }
+
+  // Table header on this page?
+  let cutoff = Infinity;
+  const titleHdr = items.find(i => /Page\s*Title/i.test(i.s));
+  if (titleHdr) {
+    const urlHdr = items.find(i => /^\s*URL/i.test(i.s) && i.x > titleHdr.x && Math.abs(i.y - titleHdr.y) < 4);
+    state.cols = { titleX: titleHdr.x, urlX: urlHdr ? urlHdr.x : titleHdr.x + pageWidth * 0.3 };
+    state.table = true;
+    cutoff = titleHdr.y - 1;
+  }
+  if (!state.table) return;
+  if (!state.cols) state.cols = { titleX: pageWidth * 0.25, urlX: pageWidth * 0.55 };
+  const { titleX, urlX } = state.cols;
+
+  const rows = items.filter(i => i.y < cutoff && !/^(Date\s*&\s*Time|Page\s*Title|URL.*)$/i.test(i.s.trim()));
+
+  // Timestamp anchors from the first column
+  const dateLines = groupLines(rows.filter(i => i.x < titleX - 3));
+  const anchors = [];
+  for (const ln of dateLines) {
+    const m = joinLine(ln.items).match(TS_RE);
+    if (m) {
+      const rec = { student: state.student, ts: formatTs(m), titleItems: [], urlItems: [] };
+      anchors.push({ ly: ln.ly, rec });
+      state.records.push(rec);
+    }
+  }
+
+  // Assign title/url items to the closest timestamp at or above them (top-aligned rows)
+  for (const it of rows.filter(i => i.x >= titleX - 3)) {
+    let target = null;
+    for (const a of anchors) { if (a.ly + 3 >= it.ly) target = a.rec; else break; }
+    if (!target) target = state.last; // continuation of a row from the previous page
+    if (!target) continue;
+    (it.x >= urlX - 3 ? target.urlItems : target.titleItems).push(it);
+  }
+  if (anchors.length) state.last = anchors[anchors.length - 1].rec;
+}
+
+function finalizeRecords(records) {
+  const out = [];
+  for (const r of records) {
+    const clean = lines => groupLines(lines).map(l => joinLine(l.items)).filter(t => t && !FOOTER_RE.test(t));
+    const title = clean(r.titleItems).join(' ');
+    const url = clean(r.urlItems).join('');
+    out.push(makeEntry(r.student, r.ts, title, url));
+  }
+  return out;
+}
+
+let workerReady = null;
+function setupPdfWorker() {
+  if (workerReady) return workerReady;
+  const url = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  // Blob wrapper lets the worker load even when this page is opened from a local file
+  workerReady = Promise.resolve().then(() => {
+    const blob = new Blob([`importScripts("${url}");`], { type: 'text/javascript' });
+    pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
+  });
+  return workerReady;
+}
+
+function setProgress(pct, msg) {
+  document.getElementById('progressWrap').style.display = 'block';
+  document.getElementById('progressBar').style.width = pct + '%';
+  document.getElementById('statusMsg').textContent = msg;
+}
+
+async function loadPdf(file) {
+  await setupPdfWorker();
+  const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+  const state = { student: "", table: false, cols: null, last: null, records: [], studentCount: 0 };
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const vp = page.getViewport({ scale: 1 });
+    const content = await page.getTextContent();
+    const items = content.items
+      .filter(i => i.str && i.str.trim() !== "")
+      .map(i => ({ s: i.str, x: i.transform[4], y: i.transform[5], w: i.width || 0, ly: -p * 100000 + i.transform[5] }));
+    processPage(items, p, vp.width, state);
+    if (p % 5 === 0 || p === pdf.numPages) {
+      setProgress(Math.round(p / pdf.numPages * 100), `${file.name}: page ${p} of ${pdf.numPages}`);
+      await new Promise(r => setTimeout(r, 0)); // keep UI responsive
+    }
+  }
+  const entries = finalizeRecords(state.records);
+  const added = addEntries(entries);
+  setProgress(100, `${file.name}: found ${entries.length} log rows across ${state.studentCount || 1} student(s); ${added} new, ${entries.length - added} duplicates skipped.`);
+}
+
+async function handleFiles(files) {
+  for (const f of files) {
+    if (f.type !== 'application/pdf' && !/\.pdf$/i.test(f.name)) continue;
+    try { await loadPdf(f); }
+    catch (e) { console.error(e); setProgress(0, `Could not read ${f.name}: ${e.message}`); }
+  }
+  updateUI();
+}
+
+const dz = document.getElementById('dropZone');
+const fi = document.getElementById('pdfInput');
+dz.addEventListener('click', () => fi.click());
+fi.addEventListener('change', e => { handleFiles(e.target.files); fi.value = ''; });
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('over'));
+dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('over'); handleFiles(e.dataTransfer.files); });
+
+/* ---------- Legacy pasted-text parsing ---------- */
+function normalizeTimestamp(ts) {
+  let clean = ts.replace(/\s+/g, '');
+  let m = clean.match(/(\d{2}\/\d{2}\/\d{4})(\d{2}:\d{2})(AM|PM)/i);
+  if (m) return `${m[1]} ${m[2]} ${m[3].toUpperCase()}`;
+  return ts.trim();
+}
+
+function parseText(raw) {
+  let tsRegex = /(\d\s*[\d\s]*\/\s*\d\s*[\d\s]*\/\s*\d\s*[\d\s]*\d\s*[\d\s]*:\d\s*[\d\s]*\s*[AP]\s*M)/gi;
+  let splitParts = raw.split(tsRegex);
+  let parsed = [];
+  for (let i = 1; i < splitParts.length; i += 2) {
+    let normTs = normalizeTimestamp(splitParts[i]);
+    let content = splitParts[i + 1] ? splitParts[i + 1].trim() : "";
+    let urlMatch = content.match(/(https?:\/\/[^\s]+|chrome:\/\/[^\s]+)/i);
+    let url = urlMatch ? urlMatch[0] : "";
+    let title = urlMatch ? content.substring(0, urlMatch.index).trim() : content;
+    if (title.length > 20 && (title.match(/\s/g) || []).length > title.length * 0.25) {
+      title = title.replace(/(?<=\w)\s+(?=\w)/g, '');
+    }
+    parsed.push(makeEntry("", normTs, title, url));
+  }
+  return parsed;
+}
+
+function processInput() {
+  let text = document.getElementById('dataInput').value;
+  if (!text.trim()) return alert("Please paste data first.");
+  addEntries(parseText(text));
+  document.getElementById('dataInput').value = "";
+  updateUI();
+}
+
+function clearData() {
+  if (confirm("Are you sure you want to clear all accumulated data?")) {
+    globalData = [];
+    localStorage.removeItem(STORE_KEY);
+    updateUI();
+  }
+}
+
+/* ---------- UI ---------- */
+function currentData() {
+  const sel = document.getElementById('studentFilter').value;
+  return sel === '__all__' ? globalData : globalData.filter(d => (d.student || '(unknown)') === sel);
+}
+
+function refreshStudentFilter() {
+  const sel = document.getElementById('studentFilter');
+  const prev = sel.value;
+  const names = [...new Set(globalData.map(d => d.student || '(unknown)'))].sort();
+  sel.innerHTML = '<option value="__all__">All students</option>' +
+    names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+  sel.value = names.includes(prev) || prev === '__all__' ? prev : '__all__';
+}
+
+function updateUI() {
+  refreshStudentFilter();
+  const data = currentData();
+  const count = c => data.filter(d => d.category === c).length;
+  document.getElementById('statTotal').innerText = data.length;
+  document.getElementById('statAcademic').innerText = count('Academic Search');
+  document.getElementById('statDistraction').innerText = count('Distraction Search');
+  document.getElementById('statMedia').innerText = count('Media / Games');
+  document.getElementById('statSchool').innerText = count('School Portal');
+
+  const tbody = document.querySelector('#searchTable tbody');
+  tbody.innerHTML = "";
+  data.filter(d => d.searchQuery || d.category === 'Academic Search' || d.category === 'Distraction Search')
+    .forEach(s => {
+      const tagClass = s.category === 'Academic Search' ? 'tag-Academic' : 'tag-DistractionSearch';
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${esc(s.student || '')}</td>
+        <td>${esc(s.timestamp)}</td>
+        <td style="font-weight: 500;">${esc(s.searchQuery || s.title)}</td>
+        <td><span class="tag ${tagClass}">${esc(s.category)}</span></td>`;
+      tbody.appendChild(tr);
+    });
+
+  renderCharts(data);
+}
+
+function dateKey(d) {
+  const m = d.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+  return m ? `${m[3]}-${m[1]}-${m[2]}` : d;
+}
+
+function renderCharts(data) {
+  const dates = [...new Set(data.map(d => d.date))].sort((a, b) => dateKey(a).localeCompare(dateKey(b)));
+  const categories = ['Academic Search', 'Distraction Search', 'Media / Games', 'School Portal', 'Other'];
+  const colorMap = {
+    'Academic Search': '#dc2626', 'Distraction Search': '#d97706', 'Media / Games': '#9333ea',
+    'School Portal': '#16a34a', 'Other': '#64748b'
+  };
+  const datasets = categories.map(cat => ({
+    label: cat,
+    data: dates.map(d => data.filter(item => item.date === d && item.category === cat).length),
+    backgroundColor: colorMap[cat]
+  }));
+
+  if (barChartInst) barChartInst.destroy();
+  barChartInst = new Chart(document.getElementById('barChart').getContext('2d'), {
+    type: 'bar',
+    data: { labels: dates, datasets: datasets },
+    options: { responsive: true, scales: { x: { stacked: true }, y: { stacked: true } } }
+  });
+
+  if (pieChartInst) pieChartInst.destroy();
+  pieChartInst = new Chart(document.getElementById('pieChart').getContext('2d'), {
+    type: 'pie',
+    data: {
+      labels: ['Academic Questions', 'Games/Distractions'],
+      datasets: [{
+        data: [data.filter(d => d.category === 'Academic Search').length,
+               data.filter(d => d.category === 'Distraction Search').length],
+        backgroundColor: ['#dc2626', '#d97706']
+      }]
+    },
+    options: { responsive: true }
+  });
+}
+
+function exportCSV() {
+  const data = currentData();
+  if (!data.length) return alert("No data to export.");
+  const q = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+  const rows = data.map(d => [d.student, d.timestamp, d.date, d.category, d.searchQuery, d.title, d.url].map(q).join(','));
+  const csv = ["Student,Timestamp,Date,Category,Search Query,Page Title,URL", ...rows].join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  a.download = `goguardian_accumulated_report_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+}
+
+window.onload = updateUI;
+</script>
+</body>
+</html>
